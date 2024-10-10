@@ -1,1 +1,7 @@
 # pdf-intelligence
+
+WE ATTEST THAT WE HAVEN’T USED ANY OTHER STUDENTS’ WORK IN OUR ASSIGNMENT AND ABIDE BY THE POLICIES LISTED IN THE STUDENT HANDBOOK Contribution:
+
+a. Abhinav Gupta (002290559): 33%
+b. Nishita Matlani: 33%
+c. Dhir Thacker: 33%
