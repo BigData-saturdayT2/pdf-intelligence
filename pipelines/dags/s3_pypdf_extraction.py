@@ -2,7 +2,6 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from airflow.providers.amazon.aws.hooks.s3 import S3Hook
 from datetime import datetime
-from PyPDF2 import PdfReader
 import os
 import logging
 
@@ -16,9 +15,9 @@ default_args = {
 
 # Define the DAG
 dag = DAG(
-    's3_pdf_processing',
+    's3_pdf_image_text_extraction',
     default_args=default_args,
-    description='A DAG to process PDFs from S3',
+    description='A DAG to extract and process text and images from PDFs using PyPDF2, OpenCV, Tesseract, and PyMuPDF',
     schedule_interval='@daily',
 )
 
@@ -46,8 +45,13 @@ def list_s3_files_combined(**kwargs):
     
     return pdf_files
 
-# Function to download and process PDF files
-def process_pdf(**kwargs):
+# Function to extract text and images from PDFs using PyPDF2, OpenCV, Tesseract, and PyMuPDF (fitz)
+def process_pdf_text_and_images(**kwargs):
+    import fitz  # Lazy-load PyMuPDF here to avoid DAG import slowdown
+    import cv2
+    import pytesseract
+    from PyPDF2 import PdfReader  # Lazy-load PyPDF2 here
+    
     hook = S3Hook(aws_conn_id='aws_default')
     bucket_name = 'gaia-benchmark-data'
     
@@ -63,24 +67,68 @@ def process_pdf(**kwargs):
         logging.info(f"Processing file: {file_key}")
         
         try:
-            # Download file from S3
+            # Download the PDF file from S3
             local_path = '/tmp/' + os.path.basename(file_key)
             obj = hook.get_key(file_key, bucket_name=bucket_name)
             obj.download_file(local_path)
             
+            # Initialize combined output
+            combined_output = ""
+
             # Extract text using PyPDF2
             reader = PdfReader(local_path)
-            text_content = ''
-            
+            text_content = ""
             for page in reader.pages:
                 text_content += page.extract_text() or ''
+            combined_output += f"Extracted Text from PDF using PyPDF2:\n{text_content}\n\n"
             
-            # Save extracted text back to S3 under a different folder
-            output_key = 'extracts/' + os.path.basename(file_key).replace('.pdf', '.txt')
-            hook.load_string(text_content, key=output_key, bucket_name=bucket_name, replace=True)
+            # Open the PDF using PyMuPDF (fitz)
+            pdf_document = fitz.open(local_path)
+            image_count = 0
+            
+            # Loop through the pages and extract images
+            for page_number in range(len(pdf_document)):
+                page = pdf_document.load_page(page_number)
+                images = page.get_images(full=True)
+                
+                if images:
+                    for img_index, img_info in enumerate(images):
+                        xref = img_info[0]
+                        base_image = pdf_document.extract_image(xref)
+                        image_bytes = base_image["image"]
+                        image_extension = base_image["ext"]
+                        image_path = f"/tmp/page_{page_number}_img_{img_index}.{image_extension}"
+                        
+                        # Save image file
+                        with open(image_path, "wb") as img_file:
+                            img_file.write(image_bytes)
+
+                        # Process the image with OpenCV (basic image manipulation example)
+                        img_cv = cv2.imread(image_path)
+                        gray_image = cv2.cvtColor(img_cv, cv2.COLOR_BGR2GRAY)
+                        _, thresholded_image = cv2.threshold(gray_image, 128, 255, cv2.THRESH_BINARY)
+                        opencv_output = f"Processed image {image_path} with OpenCV\n"
+                        
+                        # Perform OCR on the image using Tesseract
+                        ocr_text = pytesseract.image_to_string(gray_image)
+                        ocr_output = f"Extracted Text from Image using Tesseract:\n{ocr_text}\n"
+                        
+                        # Append OpenCV and OCR output to combined_output
+                        combined_output += opencv_output + ocr_output
+                        
+                        # Clean up the image file after processing
+                        os.remove(image_path)
+                        image_count += 1
+
+            if image_count == 0:
+                combined_output += "No images found in the PDF.\n"
+            
+            # Save the combined output back to S3
+            output_key = 'extracts/' + os.path.basename(file_key).replace('.pdf', '_combined_output.txt')
+            hook.load_string(combined_output, key=output_key, bucket_name=bucket_name, replace=True)
             
             logging.info(f"Successfully processed and uploaded: {output_key}")
-            
+        
         except Exception as e:
             logging.error(f"Error processing file {file_key}: {e}")
         finally:
@@ -94,10 +142,10 @@ list_files_task = PythonOperator(
     dag=dag,
 )
 
-# Task to process each PDF file
+# Task to process text and images from PDFs
 process_files_task = PythonOperator(
-    task_id='process_pdf_files',
-    python_callable=process_pdf,
+    task_id='process_pdf_text_and_images',
+    python_callable=process_pdf_text_and_images,
     dag=dag,
 )
 

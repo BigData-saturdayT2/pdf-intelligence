@@ -1,2 +1,7 @@
 PyPDF2
 boto3
+torch
+transformers
+opencv-python-headless 
+pytesseract
+pymupdf
