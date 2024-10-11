@@ -9,6 +9,11 @@ Based on the structure from your GitHub repository shown in the screenshot, here
 ## Project Overview
 This repository contains the implementation of **Assignment 2**: a PDF extraction and query tool, which automates the extraction of data from PDF files using PyPDF2 and IBM Watson Discovery API. The system is designed to allow users to securely interact with the extracted data through a client-facing application built with **Streamlit** and **FastAPI**. Apache Airflow orchestrates the data pipelines for efficient automation.
 
+## Data Flow and Architecture
+Below is an overview of the data flow and ETL architecture used in the project:
+
+![Airflow ETL and Data Flow Architecture](./images/airflow_etl_and_data_flow_architecture.png)
+
 ## Live Application Links
 - **Deployed Application**: [Streamlit App Link]
 - **Google Codelabs**: [[code labs](https://codelabs-preview.appspot.com/?file_id=11XVdlzZ8DJotFKU9-hZb4OrUASjitlK7xsWqiVxxNzg#0)]
