@@ -1,23 +1,26 @@
 services:
   fastapi:
+    image: my-fastapi-app
+    container_name: fastapi-container
     build:
-      context: ./fastapi  # Points to the FastAPI directory containing Dockerfile
+      context: ./fastapi # Path to your FastAPI Dockerfile directory
     ports:
-      - "8000:8000"  # Exposes FastAPI on port 8000
-    command: uvicorn main:app --host 0.0.0.0 --port 8000  # Ensure FastAPI is running the correct command
-    env_file:
-      - .env  # Load environment variables from .env file
-    environment:
-      - PIP_NO_CACHE_DIR=off
-      - PYTHONUNBUFFERED=1
+      - "8000:8000"
+    networks:
+      - my-network
 
   streamlit:
+    image: my-streamlit-app
+    container_name: streamlit-container
     build:
-      context: ./streamlit  # Points to the Streamlit directory containing Dockerfile
+      context: ./Streamlit # Path to your Streamlit Dockerfile directory
     ports:
-      - "8501:8501"  # Exposes Streamlit on port 8501
-    depends_on:
-      - fastapi  # Ensure FastAPI starts before Streamlit
-    command: streamlit run streamlit_app.py --server.port=8501 --server.address=0.0.0.0  # Make sure the script name is correct
+      - "8501:8501"
     env_file:
-      - .env  # Load environment variables from .env file
+      - .env  # Make sure the .env file is in the same folder as docker-compose.yml
+    networks:
+      - my-network
+
+networks:
+  my-network:
+    driver: bridge

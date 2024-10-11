@@ -1,8 +1,13 @@
 import streamlit as st
 import requests
+from dotenv import load_dotenv
+import os
 
-# FastAPI backend URL (replace with your actual backend URL)
-FASTAPI_URL = "http://localhost:8000"
+# Load environment variables from .env file
+load_dotenv()
+
+# FastAPI backend URL from the .env file
+FASTAPI_URL = os.getenv("FASTAPI_URL", "http://localhost:8000")  # Default to localhost if not set
 
 # Function to get an answer from the backend API
 def get_answer(question, token):
@@ -12,89 +17,115 @@ def get_answer(question, token):
         return response.json()
     else:
         return {"error": response.json().get("detail", "Failed to get an answer")}
-
-# Placeholder values for demonstration
-actual_answer = "PLACE HOLDER FOR THE ACTUAL ANSWER"  # Static value for the Actual Answer
-steps = """
-STEPS WILL COME HERE
-"""
-
-# Main Question Answering Page
-def question_answering_page():
-    st.title("Validator Tool")
-
-    # Display Actual and ChatGPT Answer placeholders
-    col1, col2 = st.columns(2)
-
-    # Display Actual Answer in the first column
-    with col1:
-        st.subheader("Actual Answer")
-        st.success(f"**Answer:** {actual_answer}")
-
-    # Display ChatGPT Answer placeholder in the second column
-    with col2:
-        st.subheader("ChatGPT Answer")
-        placeholder_answer = "Run Prompt to get an answer from ChatGPT"
-        chatgpt_answer_placeholder = st.empty()  # Create a placeholder element
-        chatgpt_answer_placeholder.info(f"**ChatGPT Answer:** {placeholder_answer}")
-
-    # Spacing between the sections
-    st.markdown("---")
-
-    # Match Answer Button
-    if st.button("Answers Match"):
-        st.success("The answers match!")
-
-    # Steps Followed Section
-    st.subheader("Steps followed:")
-    st.write("Edit these steps and run again if validation fails")
-
-    # Text Area to display and allow editing of steps
-    edited_steps = st.text_area("Steps followed", value=steps, height=200)
-
-    # Button to Re-run Prompt
-    if st.button("Re-run Prompt"):
-        st.info("Prompt re-run with the updated steps.")
-
-    # Sidebar for interaction components
-    st.sidebar.title("Prompt Selection")
     
-    # Dropdown for prompt selection in sidebar
-    prompt_options = ["Select a prompt", "What is AI?", "Explain blockchain", "How does GPT work?", "What is Streamlit?"]
-    selected_prompt = st.sidebar.selectbox("Select a Prompt", prompt_options)
+# Function to get the questions from the FastAPI endpoint
+def get_questions_from_db():
+    """Fetch questions from FastAPI with authentication."""
+    if "access_token" not in st.session_state:
+        st.error("You need to login first to access questions.")
+        return []
 
-    # Text input for entering additional details or modifying the prompt in sidebar
-    additional_input = st.sidebar.text_input("Refine your Prompt (Optional):", "")
+    # Include the JWT token in the request headers
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    response = requests.get(f"{FASTAPI_URL}/questions", headers=headers)
+    if response.status_code == 200:
+        return response.json().get("questions", [])
+    else:
+        st.error(f"Failed to retrieve questions: {response.status_code} - {response.json().get('detail', 'Unknown error')}")
+        return []
+    
+# Function to retrieve the extracted text and file name from FastAPI
+def get_extracted_text_and_filename(question=None):
+    """Fetch the extracted text and file name from the FastAPI endpoint."""
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    params = {"question": question} if question else {}
+    response = requests.get(f"{FASTAPI_URL}/get_extracted_text", headers=headers, params=params)
+    if response.status_code == 200:
+        # Return both the extracted text and the file name
+        return response.json().get("extracted_text", ""), response.json().get("file_name", "")
+    else:
+        st.error(f"Failed to retrieve extracted text: {response.status_code} - {response.text}")
+        return "", ""
 
-    # Button to trigger the response generation in sidebar
-    if st.sidebar.button("Run Prompt"):
-        if selected_prompt == "Select a prompt":
-            st.sidebar.warning("Please select a valid prompt from the dropdown.")
-        else:
-            # Concatenate the selected prompt and additional input if provided
-            question = selected_prompt if not additional_input else f"{selected_prompt} {additional_input}"
-            
-            # Assuming access_token is stored in session state
-            if "access_token" in st.session_state:
-                # Get the answer using the API
-                result = get_answer(question, st.session_state["access_token"])
+# Function to process the OpenAI query
+def process_openai_query(extracted_text, question, prompt):
+    """Send the extracted text, selected question, and custom prompt to FastAPI."""
+    headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
+    data = {
+        "prompt": prompt,                   # Custom prompt defined by the user
+        "extracted_text": extracted_text,  # Text extracted from the document
+        "question": question              # Selected question
+    }
 
-                # Update the ChatGPT Answer placeholder in the main area
-                if "answer" in result:
-                    chatgpt_answer_placeholder.info(f"**ChatGPT Answer:** {result['answer']}")
+    # Make a POST request to the FastAPI endpoint with all three fields
+    response = requests.post(f"{FASTAPI_URL}/process_openai_query", headers=headers, json=data)
+
+    # Check for successful response
+    if response.status_code == 200:
+        return response.json()
+    else:
+        st.error(f"Error {response.status_code}: {response.text}")
+        return None
+
+# Main Streamlit function to handle question answering and text extraction with a custom prompt box
+def question_answering_page():
+    if "access_token" not in st.session_state:
+        st.warning("You are not logged in! Please log in to access this page.")
+        st.stop()
+
+    st.title("Text Extraction & Query Hub")
+    method = st.selectbox("Select Method:", options=["Open Source", "API"], index=1)
+    st.subheader("Prompt Selection")
+
+    # Retrieve the list of questions from the FastAPI backend
+    prompt_options = ["Select a prompt"] + get_questions_from_db()
+
+    selected_prompt = st.selectbox("Select a Prompt", prompt_options)
+
+    if selected_prompt and selected_prompt != "Select a prompt":
+        try:
+            extracted_text, file_name = get_extracted_text_and_filename(selected_prompt)
+        except Exception as e:
+            st.error(f"Failed to retrieve extracted text: {e}")
+            return
+
+        if extracted_text:
+            st.session_state["extracted_text"] = extracted_text
+            st.session_state["file_name"] = file_name
+
+            st.success(f"Selected Question: {selected_prompt}")
+            st.info(f"**Corresponding File Name:** {file_name}")
+            st.text_area("Extracted Text Preview", value=extracted_text, height=150)
+
+            user_prompt = st.text_area("Write your custom prompt here:", height=100)
+
+            if st.button("Run Prompt"):
+                if not user_prompt:
+                    st.warning("Please enter a valid custom prompt before running.")
+                    return
+
+                st.info(f"Sending extracted text, question, and custom prompt to OpenAI:\n**Question**: {selected_prompt}\n**Custom Prompt**: {user_prompt}")
+                
+                try:
+                    openai_response = process_openai_query(extracted_text, selected_prompt, user_prompt)
+                except Exception as e:
+                    st.error(f"Failed to process the OpenAI query: {e}")
+                    return
+
+                if openai_response:
+                    st.subheader("OpenAI Response")
+                    st.write(openai_response['response'])
                 else:
-                    chatgpt_answer_placeholder.error(result.get("error", "Failed to get an answer."))
-            else:
-                st.sidebar.warning("You need to login first!")
+                    st.warning("Failed to get OpenAI response. Check the inputs and try again.")
+        else:
+            st.warning("No extracted text found for the selected prompt.")
+    else:
+        st.warning("Please select a valid prompt to proceed.")
 
-    # Logout Button in the Sidebar
     if st.sidebar.button("Logout"):
-        # Clear session state and redirect to the main login page
         st.session_state.clear()
-        # Update URL to redirect to main page
         st.experimental_set_query_params(page="main")
 
-# Entry point for the Question Page
 if "access_token" in st.session_state:
     question_answering_page()
 else:

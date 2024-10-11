@@ -1,56 +1,42 @@
 from fastapi import FastAPI, HTTPException, Depends, status, Query
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
 from pydantic import BaseModel
 from typing import Optional, Dict, List
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
 import mysql.connector
 from passlib.context import CryptContext
-from dotenv import load_dotenv
 import openai
+from dotenv import load_dotenv
 import os
 import requests
 
-# Load environment variables from .env file
+# Load environment variables from the .env file
 load_dotenv()
 
-# Database connection configuration loaded from environment variables
+# Database connection configuration using environment variables
 DB_CONFIG = {
     'host': os.getenv('DB_HOST'),
     'user': os.getenv('DB_USER'),
     'password': os.getenv('DB_PASSWORD'),
-    'database': os.getenv('DB_DATABASE')
+    'database': os.getenv('DB_NAME')
 }
 
-# JWT and security configurations loaded from environment variables
-SECRET_KEY = os.getenv("SECRET_KEY")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 15))
+# JWT and security configurations
+SECRET_KEY = os.getenv('SECRET_KEY')
+ALGORITHM = os.getenv('ALGORITHM')
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', 15))
 
-# Set the OpenAI API key from environment variable
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY:
-    raise ValueError("OpenAI API key is missing.")
-
+# OpenAI API Key from the environment
+OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 openai.api_key = OPENAI_API_KEY
+
+# Validate if the key is set correctly
+if not openai.api_key:
+    raise ValueError("OpenAI API key is missing.")
 
 # FastAPI app
 app = FastAPI()
-
-# CORS Middleware configuration
-origins = [
-    "http://localhost:8501",  # Allow requests from Streamlit running on this port
-    # Add other allowed origins here if needed
-]
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=origins,  # Allow requests from these origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
-    allow_headers=["*"],  # Allow all headers
-)
 
 # Password context for hashing
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
@@ -79,33 +65,21 @@ class UpdatePassword(BaseModel):
     new_password: str
 
 class OpenAIQueryRequest(BaseModel):
-    extracted_text: str
-    question: str
-    prompt: str
+    extracted_text: str  # Text extracted from the document
+    question: str  
+    prompt: str      # Selected question
 
 class OpenAIResponse(BaseModel):
-    response: str
-
-class Message(BaseModel):
-    role: str
-    content: str
-
-class QueryRequest(BaseModel):
-    model: str = "gpt-4"
-    messages: List[Message]
+    response: str  # The generated response from OpenAI
 
 # Database connection
 def get_db_connection():
-    try:
-        connection = mysql.connector.connect(
-            host=DB_CONFIG['host'],
-            user=DB_CONFIG['user'],
-            password=DB_CONFIG['password'],
-            database=DB_CONFIG['database']
-        )
-        return connection
-    except mysql.connector.Error as err:
-        raise HTTPException(status_code=500, detail=f"Database connection failed: {err}")
+    return mysql.connector.connect(
+        host=DB_CONFIG['host'],
+        user=DB_CONFIG['user'],
+        password=DB_CONFIG['password'],
+        database=DB_CONFIG['database']
+    )
 
 # Utility functions
 def get_password_hash(password: str):
@@ -144,8 +118,9 @@ def create_user(username: str, password: str):
     cursor.close()
     connection.close()
 
-# JWT token decoding
+# Custom JWT authentication and user retrieval
 def decode_jwt_token(token: str) -> Dict:
+    """Decode JWT and return the payload."""
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         return payload
@@ -157,6 +132,7 @@ def decode_jwt_token(token: str) -> Dict:
         )
 
 async def get_current_user(authorization: HTTPAuthorizationCredentials = Depends(security)):
+    """Retrieve the current user based on the JWT token."""
     token = authorization.credentials
     payload = decode_jwt_token(token)
     username = payload.get("sub")
@@ -168,9 +144,16 @@ async def get_current_user(authorization: HTTPAuthorizationCredentials = Depends
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
     return user
 
+@app.get("/")
+async def read_root():
+    return {"message": "Welcome to the FastAPI app"}
+
 # API Endpoints
 @app.post("/signup", response_model=Token)
-async def signup(username: str = Query(...), password: str = Query(...)):
+async def signup(
+    username: str = Query(..., description="The username for the new user"),
+    password: str = Query(..., description="The password for the new user")
+):
     existing_user = get_user(username)
     if existing_user:
         raise HTTPException(status_code=400, detail="Username already registered")
@@ -179,7 +162,10 @@ async def signup(username: str = Query(...), password: str = Query(...)):
     return {"access_token": access_token, "token_type": "bearer"}
 
 @app.post("/login", response_model=Token)
-async def login(username: str = Query(...), password: str = Query(...)):
+async def login(
+    username: str = Query(..., description="The username of the user"),
+    password: str = Query(..., description="The password of the user")
+):
     user = get_user(username)
     if not user or not verify_password(password, user["password"]):
         raise HTTPException(status_code=400, detail="Incorrect username or password")
@@ -192,8 +178,8 @@ async def read_user_profile(current_user: dict = Depends(get_current_user)):
 
 @app.put("/update-password")
 async def update_password(
-    old_password: str = Query(...),
-    new_password: str = Query(...),
+    old_password: str = Query(..., description="The current password of the user"),
+    new_password: str = Query(..., description="The new password to set"),
     current_user: dict = Depends(get_current_user)
 ):
     if not verify_password(old_password, current_user["password"]):
@@ -211,47 +197,47 @@ async def update_password(
 async def read_protected(current_user: dict = Depends(get_current_user)):
     return {"message": f"Hello, {current_user['username']}! You have access to this protected route."}
 
+@app.get("/questions", dependencies=[Depends(get_current_user)])
+def get_questions():
+    connection = get_db_connection()
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT question FROM gaia_merged_pdf")
+    questions = cursor.fetchall()
+    cursor.close()
+    connection.close()
+    return {"questions": [q["question"] for q in questions]}
+
 @app.post("/process_openai_query", response_model=OpenAIResponse)
 async def process_openai_query(request: OpenAIQueryRequest, current_user: str = Depends(get_current_user)):
     try:
         messages = [
-            {"role": "system", 
-             "content": "You are an assistant that processes extracted PDF text and responds to user queries..."},
+            {"role": "system", "content": "Instructions..."},
             {"role": "user", "content": f"Question: {request.question}"},
             {"role": "user", "content": f"Prompt: {request.prompt}"},
             {"role": "user", "content": f"Extracted Text: {request.extracted_text}"}
         ]
-
         payload = {
             "model": "gpt-4",
             "messages": messages,
             "temperature": 0.7,
             "max_tokens": 2048,
-            "n": 1,
-            "frequency_penalty": 0,
-            "presence_penalty": 0
+            "n": 1
         }
-
         headers = {
             "Authorization": f"Bearer {OPENAI_API_KEY}",
             "Content-Type": "application/json"
         }
-
         response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
-
         if response.status_code != 200:
             raise HTTPException(status_code=response.status_code, detail=response.text)
-
-        openai_response = response.json()
-        return {"response": openai_response['choices'][0]['message']['content']}
-
+        return {"response": response.json()['choices'][0]['message']['content']}
     except requests.RequestException as e:
         raise HTTPException(status_code=500, detail=f"Request error: {e}")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @app.get("/get_extracted_text", dependencies=[Depends(get_current_user)])
-def get_extracted_text(question: str = Query(None)):
+def get_extracted_text(question: str = Query(None, description="Question text to extract associated text and file name")):
     try:
         connection = get_db_connection()
         cursor = connection.cursor(dictionary=True)
@@ -262,11 +248,9 @@ def get_extracted_text(question: str = Query(None)):
         result = cursor.fetchone()
         cursor.close()
         connection.close()
-
         if not result:
             raise HTTPException(status_code=404, detail="Document not found or no extracted text available.")
         return {"extracted_text": result["extracted_text"], "file_name": result["file_name"]}
-    
     except mysql.connector.Error as err:
         raise HTTPException(status_code=500, detail=f"Database error: {err}")
     except Exception as e:
