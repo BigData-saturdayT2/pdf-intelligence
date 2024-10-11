@@ -5,6 +5,8 @@ __pycache__/
 # Ignore virtual environments (if applicable)
 venv/
 bdia-env-pdf/
+**/fastenv/
+**/strenv/
 
 # Ignore .env file (for sensitive credentials)
 *.env
