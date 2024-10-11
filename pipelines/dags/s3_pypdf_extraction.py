@@ -80,7 +80,7 @@ def process_pdf_text_and_images(**kwargs):
             text_content = ""
             for page in reader.pages:
                 text_content += page.extract_text() or ''
-            combined_output += f"Extracted Text from PDF using PyPDF2:\n{text_content}\n\n"
+            combined_output += f"Extracted Text from PDF:\n{text_content}\n\n"
             
             # Open the PDF using PyMuPDF (fitz)
             pdf_document = fitz.open(local_path)

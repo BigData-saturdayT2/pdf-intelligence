@@ -11,6 +11,10 @@ services:
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}  # AWS access key from .env or environment variables
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}  # AWS secret key from .env or environment variables
+      - DISCOVERY_API_KEY=${DISCOVERY_API_KEY}
+      - DISCOVERY_URL=${DISCOVERY_URL}
+      - DISCOVERY_PROJECT_ID=${DISCOVERY_PROJECT_ID}
+      - DISCOVERY_COLLECTION_ID=${DISCOVERY_COLLECTION_ID}
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
@@ -32,6 +36,10 @@ services:
       - AIRFLOW__DATABASE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@postgres/airflow
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - DISCOVERY_API_KEY=${DISCOVERY_API_KEY}
+      - DISCOVERY_URL=${DISCOVERY_URL}
+      - DISCOVERY_PROJECT_ID=${DISCOVERY_PROJECT_ID}
+      - DISCOVERY_COLLECTION_ID=${DISCOVERY_COLLECTION_ID}
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs
@@ -53,6 +61,10 @@ services:
       - AIRFLOW__CELERY__RESULT_BACKEND=db+postgresql://airflow:airflow@postgres/airflow
       - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
       - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - DISCOVERY_API_KEY=${DISCOVERY_API_KEY}
+      - DISCOVERY_URL=${DISCOVERY_URL}
+      - DISCOVERY_PROJECT_ID=${DISCOVERY_PROJECT_ID}
+      - DISCOVERY_COLLECTION_ID=${DISCOVERY_COLLECTION_ID}
     volumes:
       - ./dags:/opt/airflow/dags
       - ./logs:/opt/airflow/logs

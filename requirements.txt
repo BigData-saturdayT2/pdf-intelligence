@@ -2,4 +2,5 @@ boto3
 datasets
 huggingface_hub
 python-dotenv
+pandas
 
