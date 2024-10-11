@@ -1,0 +1,23 @@
+services:
+  fastapi:
+    build:
+      context: ./fastapi  # Points to the FastAPI directory containing Dockerfile
+    ports:
+      - "8000:8000"  # Exposes FastAPI on port 8000
+    command: uvicorn main:app --host 0.0.0.0 --port 8000  # Ensure FastAPI is running the correct command
+    env_file:
+      - .env  # Load environment variables from .env file
+    environment:
+      - PIP_NO_CACHE_DIR=off
+      - PYTHONUNBUFFERED=1
+
+  streamlit:
+    build:
+      context: ./streamlit  # Points to the Streamlit directory containing Dockerfile
+    ports:
+      - "8501:8501"  # Exposes Streamlit on port 8501
+    depends_on:
+      - fastapi  # Ensure FastAPI starts before Streamlit
+    command: streamlit run streamlit_app.py --server.port=8501 --server.address=0.0.0.0  # Make sure the script name is correct
+    env_file:
+      - .env  # Load environment variables from .env file

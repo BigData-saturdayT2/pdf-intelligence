@@ -1,235 +1,273 @@
-import streamlit as st
+from fastapi import FastAPI, HTTPException, Depends, status, Query
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi.middleware.cors import CORSMiddleware  # Import CORSMiddleware
+from pydantic import BaseModel
+from typing import Optional, Dict, List
+from datetime import datetime, timedelta
+from jose import JWTError, jwt
+import mysql.connector
+from passlib.context import CryptContext
+from dotenv import load_dotenv
+import openai
+import os
 import requests
-import datetime
-from streamlit_option_menu import option_menu
 
-# FastAPI backend URL
-FASTAPI_URL = "http://localhost:8000"
+# Load environment variables from .env file
+load_dotenv()
 
-# Function to register a new user
-def register_user(username, password):
-    response = requests.post(f"{FASTAPI_URL}/signup", json={"username": username, "password": password})
-    return response.json()
+# Database connection configuration loaded from environment variables
+DB_CONFIG = {
+    'host': os.getenv('DB_HOST'),
+    'user': os.getenv('DB_USER'),
+    'password': os.getenv('DB_PASSWORD'),
+    'database': os.getenv('DB_DATABASE')
+}
 
-# Function to login and retrieve JWT token
-def login_user(username, password):
-    response = requests.post(f"{FASTAPI_URL}/login", json={"username": username, "password": password})
-    return response.json()
+# JWT and security configurations loaded from environment variables
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", 15))
 
-# Function to check if the session is expired
-def is_session_expired():
-    if "token_expiration" not in st.session_state:
-        return True  # No expiration time set
+# Set the OpenAI API key from environment variable
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    raise ValueError("OpenAI API key is missing.")
 
-    current_time = datetime.datetime.utcnow()
-    return current_time >= st.session_state["token_expiration"]
+openai.api_key = OPENAI_API_KEY
 
-# Function to view user profile
-def view_profile(token):
-    headers = {"Authorization": f"Bearer {token}"}
-    response = requests.get(f"{FASTAPI_URL}/profile", headers=headers)
-    return response.json()
+# FastAPI app
+app = FastAPI()
 
-# Function to update password
-def update_password(old_password, new_password, token):
-    headers = {"Authorization": f"Bearer {token}"}
-    response = requests.put(f"{FASTAPI_URL}/update-password", headers=headers, json={"old_password": old_password, "new_password": new_password})
-    return response.json()
+# CORS Middleware configuration
+origins = [
+    "http://localhost:8501",  # Allow requests from Streamlit running on this port
+    # Add other allowed origins here if needed
+]
 
-# Function to get an answer to a question using the FastAPI backend
-def get_answer(question, token):
-    headers = {"Authorization": f"Bearer {token}"}
-    response = requests.post(f"{FASTAPI_URL}/answer-question", headers=headers, json={"question": question})
-    return response.json()
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,  # Allow requests from these origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods (GET, POST, etc.)
+    allow_headers=["*"],  # Allow all headers
+)
 
-# Function to render the Question Answering Page
-def question_answering_page():
-    st.subheader("Question Answering Page")
-    # Input box for the question
-    question = st.text_input("Enter your question here:")
+# Password context for hashing
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-    if st.button("Get Answer"):
-        if question:
-            result = get_answer(question, st.session_state["access_token"])
-            if "answer" in result:
-                st.write(f"**Answer:** {result['answer']}")
-            else:
-                st.error(result.get("detail", "Failed to get an answer"))
-        else:
-            st.warning("Please enter a valid question.")
+# Security scheme for JWT tokens
+security = HTTPBearer()
 
-# Main Streamlit App
-def main():
-    st.title("Streamlit Application with JWT Authentication")
+# Pydantic models
+class UserCreate(BaseModel):
+    username: str
+    password: str
 
-<<<<<<< Updated upstream
-    # Check if the session is expired
-=======
-    # Menu options based on the user's login status
-    if "access_token" not in st.session_state or is_session_expired():
-        # Show login and signup options if not logged in
-        menu_options = ["Login", "Signup"]
+class Token(BaseModel):
+    access_token: str
+    token_type: str
+
+class TokenData(BaseModel):
+    username: Optional[str] = None
+
+class UserProfile(BaseModel):
+    username: str
+    created_at: datetime
+
+class UpdatePassword(BaseModel):
+    old_password: str
+    new_password: str
+
+class OpenAIQueryRequest(BaseModel):
+    extracted_text: str
+    question: str
+    prompt: str
+
+class OpenAIResponse(BaseModel):
+    response: str
+
+class Message(BaseModel):
+    role: str
+    content: str
+
+class QueryRequest(BaseModel):
+    model: str = "gpt-4"
+    messages: List[Message]
+
+# Database connection
+def get_db_connection():
+    try:
+        connection = mysql.connector.connect(
+            host=DB_CONFIG['host'],
+            user=DB_CONFIG['user'],
+            password=DB_CONFIG['password'],
+            database=DB_CONFIG['database']
+        )
+        return connection
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"Database connection failed: {err}")
+
+# Utility functions
+def get_password_hash(password: str):
+    return pwd_context.hash(password)
+
+def verify_password(plain_password: str, hashed_password: str):
+    return pwd_context.verify(plain_password, hashed_password)
+
+def create_access_token(data: dict, expires_delta: timedelta = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
     else:
-        # Show authenticated options if the user is logged in
-        menu_options = ["View Profile", "Update Password", "Protected", "Logout"]
+        expire = datetime.utcnow() + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
 
-    # Sidebar menu
-    with st.sidebar:
-        choice = option_menu(
-            "Menu",
-            menu_options,
-            icons=["box-arrow-in-right", "person-plus"] if "access_token" not in st.session_state else ["person-circle", "lock", "shield-lock", "box-arrow-right"],
-            key="main_menu_option"
+def get_user(username: str):
+    connection = get_db_connection()
+    cursor = connection.cursor(dictionary=True)
+    cursor.execute("SELECT * FROM users WHERE username = %s", (username,))
+    user = cursor.fetchone()
+    cursor.close()
+    connection.close()
+    return user
+
+def create_user(username: str, password: str):
+    hashed_password = get_password_hash(password)
+    created_at = datetime.utcnow()
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    cursor.execute("INSERT INTO users (username, password, created_at) VALUES (%s, %s, %s)",
+                   (username, hashed_password, created_at))
+    connection.commit()
+    cursor.close()
+    connection.close()
+
+# JWT token decoding
+def decode_jwt_token(token: str) -> Dict:
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired token",
+            headers={"WWW-Authenticate": "Bearer"},
         )
 
-    # Menu Logic
-    if choice == "Signup":
-        show_signup_page()
-    elif choice == "Login":
-        show_login_page()
-    elif choice == "View Profile":
-        show_profile_page()
-    elif choice == "Update Password":
-        show_update_password_page()
-    elif choice == "Protected":
-        show_protected_page()
+async def get_current_user(authorization: HTTPAuthorizationCredentials = Depends(security)):
+    token = authorization.credentials
+    payload = decode_jwt_token(token)
+    username = payload.get("sub")
+    if username is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
-# Show the signup page
-def show_signup_page():
-    st.subheader("Signup Page")
-    new_username = st.text_input("Create a Username")
-    new_password = st.text_input("Create a Password", type="password")
-    confirm_password = st.text_input("Confirm Password", type="password")
+    user = get_user(username)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="User not found")
+    return user
 
-    if st.button("Signup"):
-        if new_password == confirm_password:
-            result = register_user(new_username, new_password)
-            st.success(result.get("msg", "Signup successful"))
+# API Endpoints
+@app.post("/signup", response_model=Token)
+async def signup(username: str = Query(...), password: str = Query(...)):
+    existing_user = get_user(username)
+    if existing_user:
+        raise HTTPException(status_code=400, detail="Username already registered")
+    create_user(username, password)
+    access_token = create_access_token(data={"sub": username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.post("/login", response_model=Token)
+async def login(username: str = Query(...), password: str = Query(...)):
+    user = get_user(username)
+    if not user or not verify_password(password, user["password"]):
+        raise HTTPException(status_code=400, detail="Incorrect username or password")
+    access_token = create_access_token(data={"sub": username})
+    return {"access_token": access_token, "token_type": "bearer"}
+
+@app.get("/profile", response_model=UserProfile)
+async def read_user_profile(current_user: dict = Depends(get_current_user)):
+    return {"username": current_user["username"], "created_at": current_user["created_at"]}
+
+@app.put("/update-password")
+async def update_password(
+    old_password: str = Query(...),
+    new_password: str = Query(...),
+    current_user: dict = Depends(get_current_user)
+):
+    if not verify_password(old_password, current_user["password"]):
+        raise HTTPException(status_code=400, detail="Old password is incorrect")
+    hashed_password = get_password_hash(new_password)
+    connection = get_db_connection()
+    cursor = connection.cursor()
+    cursor.execute("UPDATE users SET password = %s WHERE username = %s", (hashed_password, current_user["username"]))
+    connection.commit()
+    cursor.close()
+    connection.close()
+    return {"msg": "Password updated successfully"}
+
+@app.get("/protected")
+async def read_protected(current_user: dict = Depends(get_current_user)):
+    return {"message": f"Hello, {current_user['username']}! You have access to this protected route."}
+
+@app.post("/process_openai_query", response_model=OpenAIResponse)
+async def process_openai_query(request: OpenAIQueryRequest, current_user: str = Depends(get_current_user)):
+    try:
+        messages = [
+            {"role": "system", 
+             "content": "You are an assistant that processes extracted PDF text and responds to user queries..."},
+            {"role": "user", "content": f"Question: {request.question}"},
+            {"role": "user", "content": f"Prompt: {request.prompt}"},
+            {"role": "user", "content": f"Extracted Text: {request.extracted_text}"}
+        ]
+
+        payload = {
+            "model": "gpt-4",
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 2048,
+            "n": 1,
+            "frequency_penalty": 0,
+            "presence_penalty": 0
+        }
+
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json"
+        }
+
+        response = requests.post("https://api.openai.com/v1/chat/completions", headers=headers, json=payload)
+
+        if response.status_code != 200:
+            raise HTTPException(status_code=response.status_code, detail=response.text)
+
+        openai_response = response.json()
+        return {"response": openai_response['choices'][0]['message']['content']}
+
+    except requests.RequestException as e:
+        raise HTTPException(status_code=500, detail=f"Request error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
+@app.get("/get_extracted_text", dependencies=[Depends(get_current_user)])
+def get_extracted_text(question: str = Query(None)):
+    try:
+        connection = get_db_connection()
+        cursor = connection.cursor(dictionary=True)
+        if question:
+            cursor.execute("SELECT extracted_text, file_name FROM gaia_merged_pdf WHERE question = %s", (question,))
         else:
-            st.warning("Passwords do not match!")
+            cursor.execute("SELECT extracted_text, file_name FROM gaia_merged_pdf LIMIT 1")
+        result = cursor.fetchone()
+        cursor.close()
+        connection.close()
 
-# Show the login page
-def show_login_page():
-    st.subheader("Login Page")
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
-
-    if st.button("Login"):
-        result = login_user(username, password)
-        if "access_token" in result:
-            st.success(f"Login Successful! Welcome, {username}!")
-            # Store access token and expiration time in session state
-            st.session_state["access_token"] = result["access_token"]
-            st.session_state["username"] = username  # Store the username for later use
-            st.session_state["token_expiration"] = datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
-            
-            # Update query parameters to force a rerun without using experimental_rerun
-            st.experimental_set_query_params(logged_in="true")
-        else:
-            st.error(result.get("detail", "Login Failed"))
-
-# Show the user profile page
-def show_profile_page():
-    st.subheader("User Profile")
->>>>>>> Stashed changes
-    if "access_token" in st.session_state:
-        if is_session_expired():
-            st.warning("Your session has expired. Please log in again.")
-            del st.session_state["access_token"]
-            del st.session_state["token_expiration"]
-            # Instead of rerun, use session state change and URL update
-            st.experimental_set_query_params(logged_in="false")
-    else:
-        # Create navigation options for Login, Signup, Profile, and Update Password
-        with st.sidebar:
-            choice = option_menu(
-                "Menu", 
-                ["Login", "Signup", "Profile", "Update Password", "Protected"],
-                icons=["box-arrow-in-right", "person-plus", "person-circle", "lock", "shield-lock"]
-            )
-
-        # Handle Signup
-        if choice == "Signup":
-            st.subheader("Signup Page")
-            new_username = st.text_input("Create a Username")
-            new_password = st.text_input("Create a Password", type="password")
-            confirm_password = st.text_input("Confirm Password", type="password")
-
-            if st.button("Signup"):
-                if new_password == confirm_password:
-                    result = register_user(new_username, new_password)
-                    st.success(result.get("msg"))
-                else:
-                    st.warning("Passwords do not match!")
-
-        # Handle Login
-        elif choice == "Login":
-            st.subheader("Login Page")
-            username = st.text_input("Username")
-            password = st.text_input("Password", type="password")
-
-            if st.button("Login"):
-                result = login_user(username, password)
-                if "access_token" in result:
-                    st.success("Login Successful!")
-                    # Store access token and expiration time in session state
-                    st.session_state["access_token"] = result["access_token"]
-                    # Set the token expiration time (15 minutes from now)
-                    st.session_state["token_expiration"] = datetime.datetime.utcnow() + datetime.timedelta(minutes=15)
-                    # Instead of rerunning the script, we can update session state and refresh parameters
-                    st.experimental_set_query_params(logged_in="true")
-                else:
-                    st.error(result.get("detail", "Login Failed"))
-
-        # View User Profile
-        elif choice == "Profile":
-            st.subheader("User Profile")
-            if "access_token" in st.session_state:
-                profile_data = view_profile(st.session_state["access_token"])
-                if "username" in profile_data:
-                    st.write(f"Username: {profile_data['username']}")
-                    st.write(f"Created At: {profile_data['created_at']}")
-                else:
-                    st.error(profile_data.get("detail", "Could not retrieve profile"))
-            else:
-                st.warning("You need to login first.")
-
-        # Handle Password Update
-        elif choice == "Update Password":
-            st.subheader("Update Password")
-            if "access_token" in st.session_state:
-                old_password = st.text_input("Old Password", type="password")
-                new_password = st.text_input("New Password", type="password")
-
-                if st.button("Update Password"):
-                    result = update_password(old_password, new_password, st.session_state["access_token"])
-                    if "msg" in result:
-                        st.success(result["msg"])
-                    else:
-                        st.error(result.get("detail", "Password update failed"))
-            else:
-                st.warning("You need to login first.")
-
-        # Handle Protected Page
-        elif choice == "Protected":
-            st.subheader("Protected Page")
-            if "access_token" in st.session_state:
-                # Include the token in the headers
-                headers = {"Authorization": f"Bearer {st.session_state['access_token']}"}
-                st.write(f"Using Token: {st.session_state['access_token']}")
-
-                # Make the request with the token
-                response = requests.get(f"{FASTAPI_URL}/protected", headers=headers)
-
-                # Display the response
-                if response.status_code == 200:
-                    st.success(response.json().get("message"))
-                else:
-                    st.error("Access Denied!")
-                    st.write(response.json())
-            else:
-                st.warning("You need to login first.")
-
-
-if __name__ == "__main__":
-    main()
+        if not result:
+            raise HTTPException(status_code=404, detail="Document not found or no extracted text available.")
+        return {"extracted_text": result["extracted_text"], "file_name": result["file_name"]}
+    
+    except mysql.connector.Error as err:
+        raise HTTPException(status_code=500, detail=f"Database error: {err}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Internal server error: {e}")
