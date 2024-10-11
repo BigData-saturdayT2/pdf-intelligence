@@ -1,7 +1,4 @@
 # pdf-intelligence
-
-Based on the structure from your GitHub repository shown in the screenshot, here’s an updated **README** file that aligns with your project:
-
 ---
 
 # Assignment 2: PDF Extractor with IBM Watson and FastAPI Integration
