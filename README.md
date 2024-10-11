@@ -88,11 +88,5 @@ All team members contributed equally to this project. We attest that no external
 | Name     | Work Done                                                                                           |
 |----------|-----------------------------------------------------------------------------------------------------|
 | Abhinav  | Worked on Airflow pipelining, open-source data extraction, IBM extraction, Docker-Compose setup, S3 configurations and data loading |
-| Dheer    | Worked on IBM extraction, RDS table creation, S3 text file data extraction to RDS, documentation                 |
+| Dheer    | Worked on IBM extraction, RDS tables creation, S3 text file data extraction to RDS, documentation                 |
 | Nishita  | Worked on architecture diagram creation, FastAPI, Streamlit and openai integration, RDS configurations and CSV loading, documentation |
-
-
-
---- 
-
-This updated README should reflect the structure shown in your screenshot. Let me know if you need any adjustments!
