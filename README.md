@@ -80,7 +80,7 @@ docker-compose up
 - **Video Walkthrough**: [Video Link]
 
 ## Contribution
-All team members contributed equally to this project. We attest that no external work was used.
+All team members contributed to this project. We attest that no external work was used.
 
 | Name     | Work Done                                                                                           |
 |----------|-----------------------------------------------------------------------------------------------------|
