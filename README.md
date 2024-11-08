@@ -85,5 +85,5 @@ All team members contributed to this project. We attest that no external work wa
 | Name     | Work Done                                                                                           |
 |----------|-----------------------------------------------------------------------------------------------------|
 | Abhinav (50%) | Worked on Airflow pipelining, open-source data extraction, IBM extraction, Docker-Compose setup, S3 configurations and data loading |
-| Dheer (20%)    | Worked on IBM extraction, RDS tables creation, S3 text file data extraction to RDS, documentation                 |
-| Nishita (30%)  | Worked on architecture diagram creation, FastAPI, Streamlit and openai integration, RDS configurations and CSV loading, documentation |
+| Dheer (17%)    | Worked on IBM extraction, RDS tables creation, S3 text file data extraction to RDS, documentation                 |
+| Nishita (33%)  | Worked on architecture diagram creation, FastAPI, Streamlit and openai integration, RDS configurations and CSV loading, documentation |
